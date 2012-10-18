@@ -1,14 +1,15 @@
 import qualified Data.Map.Lazy as Map
-import UI.HSCurses.Curses
-import UI.HSCurses.CursesHelper
 import Network
 import Data.Char (toLower, digitToInt)
-import Text.Regex.Posix ((=~))
-import Text.Printf
 import System.IO (hSetBuffering,BufferMode(..),Handle,hClose,stdout,stdin, hSetEcho)
 import System.IO.UTF8 (hGetLine,hPutStrLn)
 import System.Exit
 import Control.Concurrent (forkIO, threadDelay)
+import System.Console.Haskeline
+import System.Console.ANSI
+import Data.List
+import TermSize
+import Text.Printf
 
 --port = 80
 --ip = "74.125.230.248"
@@ -17,6 +18,33 @@ ip = "192.168.1.3"
 
 waitTime = 800000
 
+
+-- Haskeline
+
+searchCommand :: String -> [Completion]
+searchCommand str = map simpleCompletion $ filter (str `isPrefixOf`) commands
+  where commands = map (\ (KeyBind c a) -> a) keyBinds
+
+searchInput :: String -> [Completion]
+searchInput str = []
+
+--https://linuxfr.org/users/montaigne/journaux/the-future-of-functional-programming-languages
+
+commandSettings :: Settings IO
+commandSettings = Settings
+  { historyFile = Just ".cmdhist"
+  , complete = completeWord Nothing " \t" $ return . searchCommand
+  , autoAddHistory = True
+  }
+inputSettings :: Settings IO
+inputSettings = Settings
+  { historyFile = Just ".inputhist"
+  , complete = completeWord Nothing " \t" $ return . searchInput
+  , autoAddHistory = True
+  }
+--------------------------------
+
+
 type Action = String
 type Code = String
 type Function = (Handle -> IO ())
@@ -24,47 +52,54 @@ data Command = BasicCommand    Action Code
              | AdvancedCommand Action Function
              | ComponedCommand Action [Action]
 
-commands = [
-  BasicCommand "poweroff" "PWR00",
-  BasicCommand "poweron" "PWR01",
-  BasicCommand "pause" "NTCPAUSE",
-  BasicCommand "down" "NTCDOWN",
-  BasicCommand "up" "NTCUP",
-  BasicCommand "left" "NTCLEFT",
-  BasicCommand "right" "NTCRIGHT",
-  BasicCommand "net" "SLI2B",
-  BasicCommand "enter" "NTCSELECT",
-  BasicCommand "back" "NTCRETURN",
-  BasicCommand "next" "NTCTRUP",
-  BasicCommand "previous" "NTCTRDOWN",
-  BasicCommand "volume_up" "MVLUP",
-  BasicCommand "volume_down" "MVLDOWN",
-  BasicCommand "top" "NTCTOP",
-  BasicCommand "0" "NLSL0",
-  BasicCommand "1" "NLSL1",
-  BasicCommand "2" "NLSL2",
-  BasicCommand "3" "NLSL3",
-  BasicCommand "4" "NLSL4",
-  BasicCommand "5" "NLSL5",
-  BasicCommand "6" "NLSL6",
-  BasicCommand "7" "NLSL7",
-  BasicCommand "8" "NLSL8",
-  BasicCommand "9" "NLSL9",
-  AdvancedCommand "quit" (\h -> hClose h >> exitSuccess),
-  AdvancedCommand "command" (\h -> getCmd h actionMap),
-  AdvancedCommand "help" (\h -> showHelp keyBinds),
-  AdvancedCommand "refresh" (\h -> erase),
-  AdvancedCommand "keyboard" (\h -> keyboardInput h),
-  ComponedCommand "search" ["net", "3", "0", "keyboard"]
+commands =
+  [ BasicCommand "poweroff" "PWR00"
+  , BasicCommand "poweron" "PWR01"
+  , BasicCommand "pause" "NTCPAUSE"
+  , BasicCommand "down" "NTCDOWN"
+  , BasicCommand "up" "NTCUP"
+  , BasicCommand "left" "NTCLEFT"
+  , BasicCommand "right" "NTCRIGHT"
+  , BasicCommand "net" "SLI2B"
+  , BasicCommand "enter" "NTCSELECT"
+  , BasicCommand "back" "NTCRETURN"
+  , BasicCommand "next" "NTCTRUP"
+  , BasicCommand "previous" "NTCTRDOWN"
+  , BasicCommand "volume_up" "MVLUP"
+  , BasicCommand "volume_down" "MVLDOWN"
+  , BasicCommand "top" "NTCTOP"
+  , BasicCommand "0" "NLSL0"
+  , BasicCommand "1" "NLSL1"
+  , BasicCommand "2" "NLSL2"
+  , BasicCommand "3" "NLSL3"
+  , BasicCommand "4" "NLSL4"
+  , BasicCommand "5" "NLSL5"
+  , BasicCommand "6" "NLSL6"
+  , BasicCommand "7" "NLSL7"
+  , BasicCommand "8" "NLSL8"
+  , BasicCommand "9" "NLSL9"
+  , AdvancedCommand "quit" (\h -> hClose h >> exitSuccess)
+  , AdvancedCommand "command" (\h -> getCmd h actionMap)
+  , AdvancedCommand "help" (\h -> showHelp keyBinds h actionMap)
+  , AdvancedCommand "refresh" (\h -> clearScreen)
+  , AdvancedCommand "keyboard" (\h -> keyboardInput h)
+  , ComponedCommand "search" ["net", "3", "0", "keyboard"]
   ]
 
-showHelp a = do
-  move 0 0
-  wAddStr stdScr $ unlines $ map show a
-  refresh
-  a <- getCh
-  initWindow 
-  return ()
+showHelp keys h actions = do
+  let l = 20
+  last <- lastLine
+  goLineAndClear l
+  putStr $ unlines $ map show keys
+  goLineAndClear last
+  putStr " -- Press a key to continue -- "
+  a <- getChar
+  goLineAndClear l
+  clearFromCursorToScreenEnd
+  goLineAndClear last
+  case a of
+    ':' -> getCmd h actions
+    _ -> return ()
 
 commandToFunction (BasicCommand a c) = (a, (\h -> sendCode h c))
 commandToFunction (AdvancedCommand a f) = (a, f)
@@ -89,142 +124,119 @@ sendActions h actions = do
         Nothing -> return ()
     
 
+goLineAndClear n = do
+  setCursorPosition n 0 >> clearLine
+
+lastLine = do
+  size <- getTermSize
+  return $ fst size - 1
+ 
+termWidth = do
+  size <- getTermSize
+  return $ snd size
+ 
 
 keyboardInput h = do
-  size <- scrSize
-  let termHeight = fst size
-  move (termHeight-1) 0
-  wAddStr stdScr " -- INSERT -- "
-  a <- getCmdLine
-  wAddStr stdScr a
-  refresh
-  sendCode h ("NKY" ++ a)
+  l <- lastLine
+  goLineAndClear l
+  hSetEcho stdin True
+  line <- runInputT inputSettings $ getInputLine " -- INSERT -- "
+  hSetEcho stdin False
+  case line of
+    Just a -> sendCode h ("NKY" ++ a)
+    Nothing -> return ()
+  
 
-instance Ord Key where
-  compare a b = compare (show a) (show b)
-
-data KeyBind = BasicKeyBind Char Action
-             | AdvancedKeyBind Key Action
+data KeyBind = KeyBind Char Action
 
 instance Show KeyBind where
-  show (BasicKeyBind k a) = (show k) ++ " -> " ++ a
-  show (AdvancedKeyBind k a) = (show k) ++ " -> " ++ a
+  show (KeyBind k a) = (show k) ++ " -> " ++ a
 
-keyBinds = [
-  BasicKeyBind 'z'  "poweroff",
-  BasicKeyBind 'a'  "poweron",
-  BasicKeyBind ' '  "pause",
-  BasicKeyBind 'j'  "down",
-  BasicKeyBind 'k'  "up",
-  BasicKeyBind 'q'  "quit",
-  BasicKeyBind 'h'  "left",
-  BasicKeyBind 'l'  "right",
-  BasicKeyBind 'n'  "net",
-  BasicKeyBind 't'  "top",
-  BasicKeyBind '\r' "enter",
-  BasicKeyBind 'u'  "back",
-  BasicKeyBind '>'  "next",
-  BasicKeyBind '<'  "previous",
-  BasicKeyBind '+'  "volume_up",
-  BasicKeyBind '-'  "volume_down",
-  BasicKeyBind '0'  "0",
-  BasicKeyBind '1'  "1",
-  BasicKeyBind '2'  "2",
-  BasicKeyBind '3'  "3",
-  BasicKeyBind '4'  "4",
-  BasicKeyBind '5'  "5",
-  BasicKeyBind '6'  "6",
-  BasicKeyBind '7'  "7",
-  BasicKeyBind '8'  "8",
-  BasicKeyBind '9'  "9",
-  BasicKeyBind ':'  "command",
-  BasicKeyBind 'i'  "keyboard",
-  BasicKeyBind 'r'  "refresh",
-  AdvancedKeyBind KeyUp  "keyboard"
+keyBinds =
+  [ KeyBind 'z'  "poweroff"
+  , KeyBind 'a'  "poweron"
+  , KeyBind ' '  "pause"
+  , KeyBind 'j'  "down"
+  , KeyBind 'k'  "up"
+  , KeyBind 'q'  "quit"
+  , KeyBind 'h'  "left"
+  , KeyBind 'l'  "right"
+  , KeyBind 'n'  "net"
+  , KeyBind 't'  "top"
+  , KeyBind '\r' "enter"
+  , KeyBind 'u'  "back"
+  , KeyBind '>'  "next"
+  , KeyBind '<'  "previous"
+  , KeyBind '+'  "volume_up"
+  , KeyBind '-'  "volume_down"
+  , KeyBind '0'  "0"
+  , KeyBind '1'  "1"
+  , KeyBind '2'  "2"
+  , KeyBind '3'  "3"
+  , KeyBind '4'  "4"
+  , KeyBind '5'  "5"
+  , KeyBind '6'  "6"
+  , KeyBind '7'  "7"
+  , KeyBind '8'  "8"
+  , KeyBind '9'  "9"
+  , KeyBind ':'  "command"
+  , KeyBind 'i'  "keyboard"
+  , KeyBind 'r'  "refresh"
   ]
+
 keyMap = Map.fromList $ map f keyBinds
-  where f (BasicKeyBind k a) = (KeyChar k, Map.lookup a actionMap)
-        f (AdvancedKeyBind k a) = (k, Map.lookup a actionMap)
+  where f (KeyBind k a) = (k, Map.lookup a actionMap)
 
 
 initWindow = do
-  initCurses
-  wclear stdScr
+  clearScreen
   initCmdLine
   
 
 initCmdLine = do
-  size <- scrSize
-  let termHeight = fst size
-  move (termHeight-2) 0
-  let termWidth = snd size
-  clrToEol
-  drawLine termWidth $ replicate termWidth hLine
-  clearLine 
-  refresh
+  l <- lastLine
+  tW <- termWidth
+  goLineAndClear (l-1)
+  putStrLn $ replicate tW '_'
+  goLineAndClear l
 
 showInCmdLine s = do 
-  size <- scrSize
-  let termHeight = fst size
-  move (termHeight-1) 0
-  wAddStr stdScr s 
-  refresh
-
-clearLine = do 
-  size <- scrSize
-  pos <- getYX stdScr
-  move (fst pos) 0
-  clrToEol  
-  refresh
-
-backSpace = do
-  pos <- getYX stdScr
-  if (snd pos > 1)
-    then move (fst pos) (snd pos-1) >> clrToEol >> refresh 
-    else return ()
-
-getCmdLine = do
-  refresh
-  getCmdLine_ ""
-  where
-    getCmdLine_ s = do
-      c <- getCh 
-      let stringC = (displayKey c)
-      case c of
-        KeyChar '\r' -> clearLine >> return s
-        KeyChar '\n' -> clearLine >> return s
-        KeyChar '\ESC' -> clearLine >> return ""
-        KeyChar '\DEL' -> backSpace >> getCmdLine_ (init s)
-        --"\DEL" -> backSpace >> getCmdLine_ (init s)
-        _ -> wAddStr stdScr stringC >> refresh >> getCmdLine_ (s ++ stringC)
+  l <- lastLine
+  goLineAndClear l
+  putStr s 
 
 getCmd h map = do
   initCmdLine 
-  wAddStr stdScr ":"   
-  a <- getCmdLine
-  case Map.lookup a map of
-    Just f -> f h
-    Nothing -> showInCmdLine "Command not found"
+  hSetEcho stdin True
+  line <- runInputT commandSettings $ getInputLine ":"
+  hSetEcho stdin False
+  scrollPageDown 1
+  case line of
+    Nothing -> initCmdLine 
+    Just "" -> initCmdLine 
+    Just a ->
+      case Map.lookup a map of
+        Just f -> f h
+        Nothing -> showInCmdLine "Command not found"
 
 -- pack
 pack a = "ISCP\x00\x00\x00\x10\x00\x00\x00" ++
            (printf "%c" $ length a + 3) ++
            "\x01\x00\x00\x00!1" ++ a ++ "\r"
 
--- uourceck a = drop 18 anpack
+-- unpack
 unpack a = drop 18 $ init $ init a
-
   
 
 -- speak
 speak h = do
-  key <- getCh
+  key <- getChar
   case Map.lookup key keyMap of
+    --Just (Just f) -> f h
     Just (Just f) -> f h
     Just Nothing -> showInCmdLine "Command not found"
     Nothing ->  showInCmdLine "Key not found"
   speak h
-
 
 
 --type Source = "" | "dlna" | "vtuner" | "net"
@@ -232,47 +244,46 @@ speak h = do
 --type Repeat = ""
 --type State = ""
 
-data Infos = Infos {
-  infosSource :: String,
-  infosTime :: String,
-  infosAlbum :: String,
-  infosArtist :: String,
-  infosTitle :: String,
-  infosTrack :: String,
-  infosVolume :: String,
-  infosMute :: String,
-  infosState :: String,
-  infosRepeat :: String,
-  infosShuffle :: String,
-  infosLines :: [String],
-  infosCursor :: [String]
+data Infos = Infos
+  { infosSource :: String
+  , infosTime :: String
+  , infosAlbum :: String
+  , infosArtist :: String
+  , infosTitle :: String
+  , infosTrack :: String
+  , infosVolume :: String
+  , infosMute :: String
+  , infosState :: String
+  , infosRepeat :: String
+  , infosShuffle :: String
+  , infosLines :: [String]
+  , infosCursor :: [String]
   }
 
-infosEmpty = Infos {
-  infosSource = "",
-  infosTime = "00:00/00:00",
-  infosAlbum = "",
-  infosArtist = "",
-  infosTitle  = "",
-  infosTrack = "",
-  infosVolume = "",
-  infosMute = "",
-  infosState = "",
-  infosRepeat = "",
-  infosShuffle = "",
-  infosLines = replicate 10 "",
-  infosCursor = cursorString (-1)
+infosEmpty = Infos
+  { infosSource = ""
+  , infosTime = "00:00/00:00"
+  , infosAlbum = ""
+  , infosArtist = ""
+  , infosTitle  = ""
+  , infosTrack = ""
+  , infosVolume = ""
+  , infosMute = ""
+  , infosState = ""
+  , infosRepeat = ""
+  , infosShuffle = ""
+  , infosLines = replicate 10 ""
+  , infosCursor = cursorString (-1)
 }
 
-showInfos (i, w) = do
-  move 0 0
-  wAddStr stdScr ((infosTime i)  ++ "  ")
-  wAddStr stdScr (infosTitle i) >> addLn
-  wAddStr stdScr ((infosTrack i) ++ "  ")
-  wAddStr stdScr ((infosAlbum i)  ++ " - ")
-  wAddStr stdScr (infosArtist i) >> addLn
-  wAddStr stdScr $ unlines $ zipWith (++) (infosCursor i) (infosLines i)
-  refresh
+showInfos i = do
+  goLineAndClear 0 >> clearLine
+  putStrLn ((infosTime i)  ++ "  ")
+  putStrLn ((infosTitle i) ++ "\n") >> clearLine
+  putStrLn ((infosTrack i) ++ "  ")
+  putStrLn ((infosAlbum i)  ++ " - ")
+  putStrLn ((infosArtist i) ++ "\n") >> clearLine
+  putStrLn $ unlines $ zipWith (++) (infosCursor i) (infosLines i)
 
 
 cursorString i =
@@ -343,28 +354,24 @@ updateInfos infos code =
     _ -> infos
     where (cmdType, cmdParam) = splitAt 3 code
   
-listen h (infos, window) = do
-  showInfos (infos, window)
+listen h infos = do
+  showInfos infos
   line <- hGetLine h
   --putStrLn $ "packet : " ++ line
   let msg = (unpack line)
   --putStrLn $ "message : " ++ msg
-  listen h ((updateInfos infos msg), window)
+  listen h (updateInfos infos msg)
 
 
 main :: IO ()
 main = do
   initWindow
-  keypad stdScr True
   hSetBuffering stdout NoBuffering -- fix buffering under windows
   hSetBuffering stdin NoBuffering -- fix buffering under windows
+  --keypad stdScr True
   hSetEcho stdin False
-  echo False
-  nl False
 
   h <- connectTo ip (PortNumber port)
   hSetBuffering h LineBuffering
-  forkIO $ speak h
-  --listen h (infosEmpty, initCurses)
-  listen h (infosEmpty, stdScr)
-  endWin
+  forkIO $listen h infosEmpty
+  speak h
