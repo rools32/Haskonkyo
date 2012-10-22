@@ -1,11 +1,14 @@
-module UI (goLineAndClear,lastLine,termWidth,putLine,putLines,initScreen, clearFromCursor, initCmdLine,showInCmdLine,exeFromCommandLine,showInfos,showHelp,getInput) where
+module UI ( goLineAndClear, lastLine, termWidth, putLine, putLines, initScreen
+          , clearFromCursor, initCmdLine, showInCmdLine, exeFromCommandLine
+          , showInfos, showHelp, getInput) where
 
 import System.Console.ANSI
 import Data.List
-import System.IO (Handle(..),hSetBuffering,BufferMode(NoBuffering),hClose,stdout,stdin, hSetEcho)
+import System.IO ( Handle(..), hSetBuffering, BufferMode(NoBuffering)
+                 , hClose, stdout, stdin, hSetEcho)
 import qualified Data.Map.Lazy as Map
-import System.Console.Haskeline
 import qualified Data.Text as Text
+import System.Console.Haskeline
 import TermSize
 import Infos
 import Config
@@ -52,6 +55,11 @@ putLines (x:xs) = do
   putLine x
   putLines xs
   
+put3ColumnsLines [] = do return ()
+put3ColumnsLines (x:y:z:xs) = do
+  putLine $ x ++ "\t\t" ++ y ++ "\t\t" ++ z
+  put3ColumnsLines xs
+
 initScreen = do
   clearScreen
   hSetBuffering stdout NoBuffering
@@ -120,13 +128,11 @@ showHelp h k = do
   let l = 20
   last <- lastLine
   goLineAndClear l
-  putLines $ map show k
+  --putLines $ map show k
+  put3ColumnsLines $ map show k
   goLineAndClear last
   putStr " -- Press a key to continue -- "
   c <- getChar
   goLineAndClear l
   clearFromCursor
   goLineAndClear last
-  --case c of
-  --  ':' -> exeFromCommandLine h aM
-  --  _ -> return ()
