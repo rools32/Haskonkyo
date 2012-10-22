@@ -5,28 +5,26 @@ import Data.List
 import System.IO (Handle(..),hSetBuffering,BufferMode(NoBuffering),hClose,stdout,stdin, hSetEcho)
 import qualified Data.Map.Lazy as Map
 import System.Console.Haskeline
+import qualified Data.Text as Text
 import TermSize
---import OnkyoActions
---import Types(KeyBind)
 import Infos
+import Config
+import Types
 
 
 -- Haskeline
-searchCommand :: String -> [Completion]
---searchCommand str = map simpleCompletion $ filter (str `isPrefixOf`) commands
---  where commands = map (\ (KeyBind c a) -> a) myKeyBinds
-searchCommand str = []
-
-searchInput :: String -> [Completion]
-searchInput str = []
-
-commandSettings :: Settings IO
-commandSettings = Settings
+searchCommand l str =
+  map simpleCompletion $ filter (str `isPrefixOf`) $ map commandToName l
+    where commandToName (BasicCommand a c) = a
+          commandToName (AdvancedCommand a f) = a
+          commandToName (ComponedCommand a l) = a
+commandSettings l = Settings
   { historyFile = Just ".cmdhist"
-  , complete = completeWord Nothing " \t" $ return . searchCommand
+  , complete = completeWord Nothing " \t" $ return . searchCommand l
   , autoAddHistory = True
   }
-inputSettings :: Settings IO
+
+searchInput str = []
 inputSettings = Settings
   { historyFile = Just ".inputhist"
   , complete = completeWord Nothing " \t" $ return . searchInput
@@ -70,16 +68,19 @@ initCmdLine = do
   putStrLn $ replicate tW '_'
   goLineAndClear l
 
-getFromCommandLine = do
+trim s =
+  Text.unpack $ Text.strip $ Text.pack s
+
+getFromCommandLine l = do
   initCmdLine 
   hSetEcho stdin True
-  line <- runInputT commandSettings $ getInputLine ":"
+  line <- runInputT (commandSettings l) $ getInputLine ":"
   hSetEcho stdin False
   scrollPageDown 1
   initCmdLine 
   case line of
     Nothing -> return ""
-    Just a -> return a 
+    Just a -> return $ trim a 
   
 getInput = do
   l <- lastLine
@@ -106,8 +107,8 @@ showInfos i = do
   putLine (infosArtist i)
   putLines $ zipWith (++) (infosCursor i) (infosLines i)
 
-exeFromCommandLine h map = do
-  line <- getFromCommandLine
+exeFromCommandLine h map l = do
+  line <- getFromCommandLine l
   case line of
     "" -> return ()
     a ->

@@ -5,4 +5,3 @@ import Types(KeyBind(..))
 
 mapKeys keys actionMap = Map.fromList $ map f keys
   where f (KeyBind k a) = (k, Map.lookup a actionMap)
-

@@ -1,4 +1,4 @@
-module Commands (mapAction,sendActions,exeFromCommandLine,help,quit,command,commandList) where
+module Commands (mapAction,sendActions,exeFromCommandLine,help,quit,command,commandList,initInfos) where
 
 import Network
 import System.IO
@@ -6,7 +6,7 @@ import System.Exit
 import Control.Concurrent (threadDelay)
 import qualified Data.Map.Lazy as Map
 import OnkyoIO (sendCodeToOnkyo)
-import UI (showInCmdLine,exeFromCommandLine,getInput,showHelp)
+import UI (exeFromCommandLine,getInput,showHelp)
 import Types (Command(..))
 import Config (keyList)
 
@@ -17,16 +17,19 @@ commandToFunction (ComponedCommand a l) = (a, (\ t -> sendActions t l))
 mapAction l =
   Map.fromList (map commandToFunction l)
 
-
 commandList =
   [ BasicCommand "poweroff" "PWR00"
   , BasicCommand "poweron" "PWR01"
+  , BasicCommand "mute" "AMTTG"
+  , BasicCommand "cbl-sat" "SLI01"
+  , BasicCommand "net" "SLI2B"
+  , BasicCommand "dvd" "SLI10"
   , BasicCommand "pause" "NTCPAUSE"
   , BasicCommand "down" "NTCDOWN"
   , BasicCommand "up" "NTCUP"
+  , BasicCommand "display" "NTCDISPLAY"
   , BasicCommand "left" "NTCLEFT"
   , BasicCommand "right" "NTCRIGHT"
-  , BasicCommand "net" "SLI2B"
   , BasicCommand "enter" "NTCSELECT"
   , BasicCommand "back" "NTCRETURN"
   , BasicCommand "next" "NTCTRUP"
@@ -34,6 +37,11 @@ commandList =
   , BasicCommand "volume_up" "MVLUP"
   , BasicCommand "volume_down" "MVLDOWN"
   , BasicCommand "top" "NTCTOP"
+  , BasicCommand "artist" "NATQSTN"
+  , BasicCommand "album" "NALQSTN"
+  , BasicCommand "title" "NTIQSTN"
+  , BasicCommand "track" "NTRQSTN"
+  , BasicCommand "list" "NTCLIST"
   , BasicCommand "0" "NLSL0"
   , BasicCommand "1" "NLSL1"
   , BasicCommand "2" "NLSL2"
@@ -51,10 +59,11 @@ commandList =
   , AdvancedCommand "keyboard" sendInput
   , ComponedCommand "spotify" ["net", "3"]
   , ComponedCommand "searchOnSpotify" ["spotify", "0", "keyboard"]
+  , ComponedCommand "refresh" ["artist", "album", "title", "track", "list"]
   ]
 
 command h = do
-  exeFromCommandLine h $ mapAction commandList
+  exeFromCommandLine h commandMap commandList
 
 help h = do
   showHelp h keyList
@@ -83,3 +92,10 @@ sendInput h = do
 
 quit h = do
   hClose h >> exitSuccess
+
+initInfos h = do
+  case Map.lookup "infos" commandMap of
+    Just code -> do
+      code h
+    Nothing -> return ()
+

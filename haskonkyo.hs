@@ -4,7 +4,7 @@ import Speak
 import Listen
 import UI
 import Config(keyList)
-import Commands(commandList)
+import Commands(commandList,initInfos)
 
 --port = 80
 --ip = "74.125.230.248"
@@ -13,7 +13,8 @@ ip = "192.168.1.3"
 
 main :: IO ()
 main = do
-  initScreen
   h <- connectToOnkyo ip port
+  initScreen
+  --initInfos h
   forkIO $listen h
   speak h
