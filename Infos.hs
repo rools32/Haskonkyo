@@ -12,8 +12,8 @@ data Infos = Infos
   , infosState :: String
   , infosRepeat :: String
   , infosShuffle :: String
-  , infosLines :: [String]
+  , infosList :: [String]
   , infosCursor :: [String]
+  , infosMod :: [Int]
   }
-
 

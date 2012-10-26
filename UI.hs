@@ -1,9 +1,10 @@
 module UI ( goLineAndClear, lastLine, termWidth, putLine, putLines, initScreen
           , clearFromCursor, initCmdLine, showInCmdLine, exeFromCommandLine
-          , showInfos, showHelp, getInput) where
+          , showInfos, showHelp, getInput,wipeScreen) where
 
 import System.Console.ANSI
 import Data.List
+import Control.Concurrent (putMVar, takeMVar)
 import System.IO ( Handle(..), hSetBuffering, BufferMode(NoBuffering)
                  , hClose, stdout, stdin, hSetEcho)
 import qualified Data.Map.Lazy as Map
@@ -14,6 +15,8 @@ import Infos
 import Config
 import Types
 
+allInfos :: [Int]
+allInfos = [1..5]
 
 -- Haskeline
 searchCommand l str =
@@ -35,9 +38,11 @@ inputSettings = Settings
   }
 --------------------------------
 
+goLine n = do
+  setCursorPosition n 0
 
 goLineAndClear n = do
-  setCursorPosition n 0 >> clearLine
+  goLine n >> clearLine
 
 lastLine = do
   size <- getTermSize
@@ -47,8 +52,17 @@ termWidth = do
   size <- getTermSize
   return $ snd size
 
+putLineAt l s = do
+  goLine l
+  putLine s
+
 putLine s = do
-  putStr (s ++ "\n") >> clearLine
+  putStr s >> clearFromCursorToLineEnd 
+  putStr "\n"
+
+putLinesAt l x = do
+  goLine l
+  putLines x
 
 putLines [] = do return ()
 putLines (x:xs) = do
@@ -62,6 +76,7 @@ put3ColumnsLines (x:y:z:xs) = do
 
 initScreen = do
   clearScreen
+  hideCursor
   hSetBuffering stdout NoBuffering
   hSetBuffering stdin NoBuffering
   initCmdLine 
@@ -69,33 +84,49 @@ initScreen = do
 
 clearFromCursor = clearFromCursorToScreenEnd
 
+drawLineAt l = do
+  goLineAndClear l
+  drawLine
+
+drawLine = do
+  tW <- termWidth
+  putStrLn $ replicate tW '_'
+
 initCmdLine = do
   l <- lastLine
-  tW <- termWidth
-  goLineAndClear (l-1)
-  putStrLn $ replicate tW '_'
+  goLineAndClear $ l-1
+  drawLine
+
+wipeScreen l = do
   goLineAndClear l
+  clearFromCursor
+  initCmdLine
+  --scrollPageDown 1
 
 trim s =
   Text.unpack $ Text.strip $ Text.pack s
 
-getFromCommandLine l = do
+
+inputInCommandLine s settings display = do
+  takeMVar display -- blocage de l'affichage
   initCmdLine 
+  showCursor
   hSetEcho stdin True
-  line <- runInputT (commandSettings l) $ getInputLine ":"
+  line <- runInputT settings $ getInputLine s
   hSetEcho stdin False
-  scrollPageDown 1
-  initCmdLine 
+  hideCursor
+  wipeScreen bottom
+  putMVar display allInfos -- reprise de l'affichage et raffichage
+  return line
+
+getFromCommandLine l display = do
+  line <- inputInCommandLine ":" (commandSettings l) display
   case line of
     Nothing -> return ""
     Just a -> return $ trim a 
   
-getInput = do
-  l <- lastLine
-  goLineAndClear l
-  hSetEcho stdin True
-  line <- runInputT inputSettings $ getInputLine " -- INSERT -- "
-  hSetEcho stdin False
+getInput display = do
+  line <- inputInCommandLine " -- INSERT -- " inputSettings display
   case line of
     Just a -> return a
     Nothing -> return ""
@@ -105,26 +136,34 @@ showInCmdLine s = do
   goLineAndClear l
   putStr s 
 
+bottom = 17
+
 
 showInfos i = do
-  goLineAndClear 0
-  putStr ((infosTime i)  ++ "  ")
-  putLine (infosTitle i)
-  putStr ((infosTrack i) ++ "  ")
-  putStr ((infosAlbum i)  ++ " - ")
-  putLine (infosArtist i)
-  putLines $ zipWith (++) (infosCursor i) (infosLines i)
+  case infosMod i of
+    [] -> return ()
+    (l:ls)
+      | l == 1 -> putLineAt l (infosTime i ++ "  " ++ (infosTitle i))
+      | l == 2 -> putLineAt l (infosTrack i ++ "  " ++ (infosAlbum i)
+                              ++ " - " ++ (infosArtist i))
+      | l == 3 -> putLineAt l ""
+      | l == 4 -> drawLineAt l
+      | l == 5 -> putLinesAt l (zipWith (++) (infosCursor i) (infosList i))
+                    >> drawLine
+  if infosMod i == []
+    then return ()
+    else showInfos i {infosMod = tail $ infosMod i}
 
-exeFromCommandLine h map l = do
-  line <- getFromCommandLine l
+exeFromCommandLine h map l display = do
+  line <- getFromCommandLine l display
   case line of
     "" -> return ()
     a ->
       case Map.lookup a map of
-        Just f -> f h
+        Just f -> f h display
         Nothing -> showInCmdLine "Command not found"
 
-showHelp h k = do
+showHelp h k display = do
   let l = 20
   last <- lastLine
   goLineAndClear l
@@ -133,6 +172,9 @@ showHelp h k = do
   goLineAndClear last
   putStr " -- Press a key to continue -- "
   c <- getChar
-  goLineAndClear l
-  clearFromCursor
-  goLineAndClear last
+  redrawInfos h display
+
+redrawInfos h display = do
+  takeMVar display
+  wipeScreen 1
+  putMVar display [1..5]

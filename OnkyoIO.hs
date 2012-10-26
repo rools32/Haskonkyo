@@ -10,7 +10,6 @@ connectToOnkyo ip port = do
   hSetBuffering h LineBuffering
   return h
 
-getCodeFromOnkyo :: Handle -> IO String
 getCodeFromOnkyo h = do
   line <- hGetLine h
   return $ unpack line

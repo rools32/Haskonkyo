@@ -1,6 +1,7 @@
 module Listen (listen) where
 
 import Data.Char (digitToInt)
+import Control.Concurrent (putMVar, takeMVar)
 import UI
 import Infos
 import OnkyoIO (getCodeFromOnkyo)
@@ -13,14 +14,14 @@ updateInfos infos code =
         "02" -> infos {infosSource = "vtuner"}
         "F3" -> infos {infosSource = "net"}
         _    -> infos {infosSource = "oups"}
-    "NTM" -> infos {infosTime = cmdParam}
-    "NAT" -> infos {infosArtist = cmdParam}
-    "NAL" -> infos {infosAlbum = cmdParam}
-    "NTI" -> infos {infosTitle = cmdParam}
-    "NTR" -> infos {infosTrack = cmdParam}
-    "MVL" -> infos {infosVolume = cmdParam}
-    "AMT" -> infos {infosMute = cmdParam}
-    "SPL" -> infos {infosTime = cmdParam}
+    "NTM" -> infos {infosTime = cmdParam} {infosMod = [1]}
+    "SPL" -> infos {infosTime = cmdParam} {infosMod = [1]}
+    "NTI" -> infos {infosTitle = cmdParam} {infosMod = [1]}
+    "NAT" -> infos {infosArtist = cmdParam} {infosMod = [2]}
+    "NAL" -> infos {infosAlbum = cmdParam} {infosMod = [2]}
+    "NTR" -> infos {infosTrack = cmdParam} {infosMod = [2]}
+    "MVL" -> infos {infosVolume = cmdParam} {infosMod = [1]}
+    "AMT" -> infos {infosMute = cmdParam} {infosMod = [1]}
     -- state
     "NST" ->
       (\(cmdParam, infos) -> 
@@ -50,19 +51,23 @@ updateInfos infos code =
         ('C':xs) -> -- cursor info
           case xs of
             ('-':xs) -> infos {infosCursor = (cursorString (-1))}
+                              {infosMod = [5]}
             (l:xs)   -> -- cursor is present
               case xs of -- update type
                 ('P':xs) -> infos {infosCursor = (cursorString (-1))}
-                                  {infosLines = (infosLines infosEmpty)}
+                                  {infosList = (infosList infosEmpty)}
+                                  {infosMod = [5]}
                 ('C':xs) -> infos {infosCursor = (cursorString $ digitToInt l)}
-        ('U':xs) -> infos {infosLines = (prevLines ++ line ++ nextLines)}
+                                  {infosMod = [5]}
+        ('U':xs) -> infos {infosList = (prevLines ++ line ++ nextLines)}
+                          {infosMod = [5]}
           where idx = digitToInt $ head xs
                 subParam = tail xs
-                prevLines = take idx $ infosLines infos
+                prevLines = take idx $ infosList infos
                 line = [(take 1 subParam) ++ " " ++ (drop 1 subParam)]
-                nextLines =  drop (idx+1) $ infosLines infos
-        _ -> infos
-    _ -> infos
+                nextLines =  drop (idx+1) $ infosList infos
+        _ -> infos {infosMod = []}
+    _ -> infos {infosMod = []}
     where (cmdType, cmdParam) = splitAt 3 code
   
 infosEmpty = Infos
@@ -77,8 +82,9 @@ infosEmpty = Infos
   , infosState = "-"
   , infosRepeat = "-"
   , infosShuffle = "-"
-  , infosLines = replicate 10 ""
+  , infosList = replicate 10 ""
   , infosCursor = cursorString (-1)
+  , infosMod = [1..5]
 }
 
 cursorString i =
@@ -90,12 +96,12 @@ cursorString i =
 
 
 
-loop h infos = do
-  showInfos infos
+loop h infos display = do
+  mod <- takeMVar display
+  showInfos $ infos {infosMod = infosMod infos ++ mod}
   code <- getCodeFromOnkyo h
-  --putStrLn $ "packet : " ++ line
-  --putStrLn $ "message : " ++ msg
-  loop h (updateInfos infos code)
+  putMVar display []
+  loop h (updateInfos infos code) display
 
-listen h = do
-  loop h infosEmpty
+listen h display = do
+  loop h infosEmpty display

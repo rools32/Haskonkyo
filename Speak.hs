@@ -16,10 +16,14 @@ commandMap =
 keyMap =
  mapKeys keyList commandMap
 
-speak h = do
+loop h display = do
   key <- getChar
   case Map.lookup key keyMap of
-    Just (Just f) -> f h
+    Just (Just f) -> f h display
     Just Nothing  -> showInCmdLine "Command not found"
     Nothing       -> showInCmdLine "Key not found"
-  speak h
+  loop h display
+
+speak h display = do
+  refreshInfos h display
+  loop h display

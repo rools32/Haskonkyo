@@ -1,4 +1,5 @@
-module Commands (mapAction,sendActions,exeFromCommandLine,help,quit,command,commandList,initInfos) where
+module Commands (mapAction,sendActions,help,quit,command,commandList,
+                 refreshInfos) where
 
 import Network
 import System.IO
@@ -6,13 +7,13 @@ import System.Exit
 import Control.Concurrent (threadDelay)
 import qualified Data.Map.Lazy as Map
 import OnkyoIO (sendCodeToOnkyo)
-import UI (exeFromCommandLine,getInput,showHelp)
+import UI (exeFromCommandLine,getInput,showHelp,wipeScreen)
 import Types (Command(..))
 import Config (keyList)
 
-commandToFunction (BasicCommand a c) = (a, (\ h -> sendCodeToOnkyo h c))
+commandToFunction (BasicCommand a c) = (a, (\ h d -> sendCodeToOnkyo h c))
 commandToFunction (AdvancedCommand a f) = (a, f)
-commandToFunction (ComponedCommand a l) = (a, (\ t -> sendActions t l))
+commandToFunction (ComponedCommand a l) = (a, (\ h d -> sendActions h d l))
 
 mapAction l =
   Map.fromList (map commandToFunction l)
@@ -23,7 +24,10 @@ commandList =
   , BasicCommand "mute" "AMTTG"
   , BasicCommand "cbl-sat" "SLI01"
   , BasicCommand "net" "SLI2B"
+  , BasicCommand "dlna" "NSV000"
+  , BasicCommand "vtuner" "NSV020"
   , BasicCommand "dvd" "SLI10"
+  , BasicCommand "spotify" "NSV0A1"
   , BasicCommand "pause" "NTCPAUSE"
   , BasicCommand "down" "NTCDOWN"
   , BasicCommand "up" "NTCUP"
@@ -55,47 +59,49 @@ commandList =
   , AdvancedCommand "quit" quit
   , AdvancedCommand "command" command
   , AdvancedCommand "help" help
-  --, AdvancedCommand "refresh" (\h -> clearScreen)
+  , AdvancedCommand "nop" nop
   , AdvancedCommand "keyboard" sendInput
-  , ComponedCommand "spotify" ["net", "3"]
+  , AdvancedCommand "refreshInfos" refreshInfos
   , ComponedCommand "searchOnSpotify" ["spotify", "0", "keyboard"]
-  , ComponedCommand "refresh" ["artist", "album", "title", "track", "list"]
+  , ComponedCommand "streaming" ["net", "0", "nop", "nop", "nop", "2", "0"]
   ]
 
-command h = do
-  exeFromCommandLine h commandMap commandList
+command h display = do
+  exeFromCommandLine h commandMap commandList display
 
-help h = do
-  showHelp h keyList
+help h display = do
+  showHelp h keyList display
+
+refreshList = ["artist", "album", "title", "track", "list"]
+
+refreshInfos h display =
+  sendActions h display refreshList
 
 waitTime = 800000
+
+nop h display = do
+  return ()
 
 commandMap =
   mapAction commandList 
 
-sendActions h actions = do
+sendActions h display actions = do
   if actions == []
     then return ()
     else
       case Map.lookup (head actions) commandMap of
-        Just code -> do
-          code h
+        Just fun -> do
+          fun h display
           threadDelay waitTime
-          sendActions h (tail actions)
+          sendActions h display (tail actions)
         Nothing -> return ()
     
-sendInput h = do
-  s <- getInput
+sendInput h display = do
+  s <- getInput display
   case s of
     "" -> return ()
     _  -> sendCodeToOnkyo h ("NKY" ++ s)
 
-quit h = do
+quit h display = do
   hClose h >> exitSuccess
-
-initInfos h = do
-  case Map.lookup "infos" commandMap of
-    Just code -> do
-      code h
-    Nothing -> return ()
 
