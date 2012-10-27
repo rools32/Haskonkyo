@@ -64,6 +64,18 @@ putLinesAt l x = do
   goLine l
   putLines x
 
+putColorLinesAt l xs cs = do
+  goLine l
+  putColorLines xs cs
+
+putColorLines [] _ = do return ()
+putColorLines (x:xs) (c:cs) = do
+  setSGR c
+  putLine x
+  setSGR []
+  putColorLines xs cs
+
+
 putLines [] = do return ()
 putLines (x:xs) = do
   putLine x
@@ -101,7 +113,6 @@ wipeScreen l = do
   goLineAndClear l
   clearFromCursor
   initCmdLine
-  --scrollPageDown 1
 
 trim s =
   Text.unpack $ Text.strip $ Text.pack s
@@ -113,6 +124,7 @@ inputInCommandLine s settings display = do
   showCursor
   hSetEcho stdin True
   line <- runInputT settings $ getInputLine s
+  scrollPageDown 1
   hSetEcho stdin False
   hideCursor
   wipeScreen bottom
@@ -145,14 +157,27 @@ showInfos i = do
     (l:ls)
       | l == 1 -> putLineAt l (infosTime i ++ "  " ++ (infosTitle i))
       | l == 2 -> putLineAt l (infosTrack i ++ "  " ++ (infosAlbum i)
-                              ++ " - " ++ (infosArtist i))
+                               ++ " - " ++ (infosArtist i))
       | l == 3 -> putLineAt l ""
       | l == 4 -> drawLineAt l
-      | l == 5 -> putLinesAt l (zipWith (++) (infosCursor i) (infosList i))
-                    >> drawLine
+      | l == 5 -> UI.showList i l
   if infosMod i == []
     then return ()
     else showInfos i {infosMod = tail $ infosMod i}
+
+showList i l = do
+  putColorLinesAt l (zipWith (++)
+                        -- ajoute le numero de l'entree dans la liste
+                       (map (\ x -> x ++ " - ")
+                       (map show [0..9])) (infosList i))
+                    (zipWith (++)
+                      -- surligne la ligne courante
+                      (map (\ x -> [SetSwapForegroundBackground x]) (infosCursor i))
+                      -- colorie la ligne en cours de lecture
+                      (map (\ x -> if x then [SetColor Foreground Dull Red] else [])
+                           (infosPlay i)))
+  drawLine
+
 
 exeFromCommandLine h map l display = do
   line <- getFromCommandLine l display

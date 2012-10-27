@@ -24,20 +24,20 @@ updateInfos infos code =
     "AMT" -> infos {infosMute = cmdParam} {infosMod = [1]}
     -- state
     "NST" ->
-      (\(cmdParam, infos) -> 
+      (\ (cmdParam, infos) -> 
         case head cmdParam of
            '-' -> infos {infosRepeat = "off"}
            'S' -> infos {infosRepeat = "all"}
            'A' -> infos {infosRepeat = "album"}
            'F' -> infos {infosRepeat = "folder"}) $
-          (\(cmdParam, infos) -> (
+          (\ (cmdParam, infos) -> (
             tail cmdParam,
             case head cmdParam of
                '-' -> infos {infosRepeat = "off"}
                'R' -> infos {infosRepeat = "all"}
                'F' -> infos {infosRepeat = "folder"}
                '1' -> infos {infosRepeat = "one"})) $
-              (\(cmdParam, infos) -> (
+              ( \(cmdParam, infos) -> (
                 tail cmdParam,
                 case head cmdParam of
                    'P' -> infos {infosState = "play"}
@@ -50,26 +50,30 @@ updateInfos infos code =
       case cmdParam of
         ('C':xs) -> -- cursor info
           case xs of
-            ('-':xs) -> infos {infosCursor = (cursorString (-1))}
-                              {infosMod = [5]}
             (l:xs)   -> -- cursor is present
               case xs of -- update type
-                ('P':xs) -> infos {infosCursor = (cursorString (-1))}
+                ('P':xs) -> infos {infosCursor = (idxToBool idx)}
                                   {infosList = (infosList infosEmpty)}
                                   {infosMod = [5]}
-                ('C':xs) -> infos {infosCursor = (cursorString $ digitToInt l)}
+                ('C':xs) -> infos {infosCursor = (idxToBool idx)}
                                   {infosMod = [5]}
-        ('U':xs) -> infos {infosList = (prevLines ++ line ++ nextLines)}
-                          {infosMod = [5]}
-          where idx = digitToInt $ head xs
-                subParam = tail xs
-                prevLines = take idx $ infosList infos
-                line = [(take 1 subParam) ++ " " ++ (drop 1 subParam)]
-                nextLines =  drop (idx+1) $ infosList infos
+             where  idx = if l == '-' then (-1) else digitToInt l
+        ('U':(l:(play:value))) ->
+          infos {infosPlay = if play == '0'
+                               then idxToBool idx
+                               else notIdxToBool idx (infosPlay infos)}
+                {infosList = take idx (infosList infos)
+                          ++ [value]
+                          ++ (drop (idx+1) (infosList infos))}
+                {infosMod = [5]}
+          where  idx = digitToInt l
         _ -> infos {infosMod = []}
     _ -> infos {infosMod = []}
     where (cmdType, cmdParam) = splitAt 3 code
   
+notIdxToBool idx list =
+  take idx list ++ [False] ++ (drop (idx+1) list)
+
 infosEmpty = Infos
   { infosSource = ""
   , infosTime = "00:00/00:00"
@@ -83,18 +87,20 @@ infosEmpty = Infos
   , infosRepeat = "-"
   , infosShuffle = "-"
   , infosList = replicate 10 ""
-  , infosCursor = cursorString (-1)
+  , infosCursor = idxToBool 0
+  , infosPlay = idxToBool (-1)
   , infosMod = [1..5]
 }
 
-cursorString i =
-  if (i == -1)
-    then map space $ map show [0..9]
-    else (map space (map show [0..(i-1)])) ++ ["-> "] ++
-      (map space (map show [(i+1)..9]))
-    where space a = a ++ "  "
+idxToBool i =
+  idxToBool_ i []
 
-
+idxToBool_ i l =
+  if length l == 10
+    then l
+    else
+      idxToBool_ (i+1)
+                  (if (i == 9) then (True:l) else (False:l))
 
 loop h infos display = do
   mod <- takeMVar display

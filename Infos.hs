@@ -13,7 +13,8 @@ data Infos = Infos
   , infosRepeat :: String
   , infosShuffle :: String
   , infosList :: [String]
-  , infosCursor :: [String]
+  , infosCursor :: [Bool]
+  , infosPlay :: [Bool]
   , infosMod :: [Int]
   }
 
