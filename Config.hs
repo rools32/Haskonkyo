@@ -4,20 +4,20 @@ import Types(KeyBind(..))
 --import Keys(mapKeys)
 
 keyList =
-  [ KeyBind 'z'  "poweroff"
+  [ KeyBind '&'  "poweroff"
   , KeyBind 'a'  "poweron"
-  , KeyBind 's'  "cbl-sat"
-  , KeyBind 'd'  "dvd"
+  , KeyBind 'n'  "net"
   , KeyBind ' '  "pause"
   , KeyBind 'j'  "down"
   , KeyBind 'k'  "up"
   , KeyBind 'q'  "quit"
   , KeyBind 'h'  "left"
   , KeyBind 'l'  "right"
-  , KeyBind 'n'  "net"
   , KeyBind 't'  "top"
   , KeyBind '\n' "enter"
   , KeyBind 'u'  "back"
+  , KeyBind 'd'  "display"
+  , KeyBind 'z'  "current"
   , KeyBind '>'  "next"
   , KeyBind '<'  "previous"
   , KeyBind '+'  "volume_up"
@@ -36,5 +36,5 @@ keyList =
   , KeyBind ':'  "command"
   , KeyBind 'i'  "keyboard"
   , KeyBind 'r'  "refresh"
-  , KeyBind '/'  "searchOnSpotify"
+  , KeyBind '/'  "searchOnList"
   ]

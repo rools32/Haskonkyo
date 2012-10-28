@@ -4,12 +4,16 @@ module Commands (mapAction,sendActions,help,quit,command,commandList,
 import Network
 import System.IO
 import System.Exit
-import Control.Concurrent (threadDelay)
+import Control.Concurrent (threadDelay,putMVar, takeMVar)
 import qualified Data.Map.Lazy as Map
+import System.Console.Haskeline
+import Data.List(isPrefixOf)
+
 import OnkyoIO (sendCodeToOnkyo)
-import UI (exeFromCommandLine,getInput,showHelp,wipeScreen)
+import UI (exeFromCommandLine,showHelp,wipeScreen,getFromCommandLine,showInCmdLine)
 import Types (Command(..))
 import Config (keyList)
+import Infos
 
 commandToFunction (BasicCommand a c) = (a, (\ h d -> sendCodeToOnkyo h c))
 commandToFunction (AdvancedCommand a f) = (a, f)
@@ -32,6 +36,8 @@ commandList =
   , BasicCommand "down" "NTCDOWN"
   , BasicCommand "up" "NTCUP"
   , BasicCommand "display" "NTCDISPLAY"
+  , BasicCommand "forward" "NTCFF"
+  , BasicCommand "backward" "NTCREW"
   , BasicCommand "left" "NTCLEFT"
   , BasicCommand "right" "NTCRIGHT"
   , BasicCommand "enter" "NTCSELECT"
@@ -61,47 +67,100 @@ commandList =
   , AdvancedCommand "help" help
   , AdvancedCommand "nop" nop
   , AdvancedCommand "keyboard" sendInput
+  , AdvancedCommand "searchOnList" inputSearchOnList
   , AdvancedCommand "refreshInfos" refreshInfos
   , ComponedCommand "searchOnSpotify" ["spotify", "0", "keyboard"]
   , ComponedCommand "streaming" ["net", "0", "nop", "nop", "nop", "2", "0"]
+  , ComponedCommand "playlist" ["display", "back"]
   ]
 
-command h display = do
-  exeFromCommandLine h commandMap commandList display
+command h mvarInfos = do
+  exeFromCommandLine h commandMap (commandSettings commandList) mvarInfos
 
-help h display = do
-  showHelp h keyList display
+-- Haskeline
+searchCommand l str =
+  map simpleCompletion $ filter (str `isPrefixOf`) $ map commandToName l
+    where commandToName (BasicCommand a c) = a
+          commandToName (AdvancedCommand a f) = a
+          commandToName (ComponedCommand a l) = a
+commandSettings l = Settings
+  { historyFile = Just ".cmdhist"
+  , complete = completeWord Nothing " \t" $ return . searchCommand l
+  , autoAddHistory = True
+  }
+
+searchInput str = []
+inputSettings = Settings
+  { historyFile = Just ".inputhist"
+  , complete = completeWord Nothing " \t" $ return . searchInput
+  , autoAddHistory = True
+  }
+
+searchSettings =
+  Settings { historyFile = Just ".search"
+           , complete = completeWord Nothing " \t" $ return . (\ s -> [])
+           , autoAddHistory = True
+           }
+
+--------------------------------
+
+
+help h mvarInfos = do
+  showHelp h keyList mvarInfos
 
 refreshList = ["artist", "album", "title", "track", "list"]
 
-refreshInfos h display =
-  sendActions h display refreshList
+refreshInfos h mvarInfos =
+  sendActions h mvarInfos refreshList
 
 waitTime = 800000
 
-nop h display = do
+nop h mvarInfos = do
   return ()
 
 commandMap =
   mapAction commandList 
 
-sendActions h display actions = do
+sendActions h mvarInfos actions = do
   if actions == []
     then return ()
     else
       case Map.lookup (head actions) commandMap of
         Just fun -> do
-          fun h display
+          fun h mvarInfos
           threadDelay waitTime
-          sendActions h display (tail actions)
+          sendActions h mvarInfos (tail actions)
         Nothing -> return ()
     
-sendInput h display = do
-  s <- getInput display
+sendInput h mvarInfos = do
+  s <- getFromCommandLine mvarInfos " -- INSERT -- " inputSettings
   case s of
     "" -> return ()
     _  -> sendCodeToOnkyo h ("NKY" ++ s)
 
-quit h display = do
+quit h mvarInfos = do
   hClose h >> exitSuccess
 
+
+inputSearchOnList h mvarInfos = do
+  search <- getFromCommandLine mvarInfos "/" searchSettings
+  varInfos <- takeMVar mvarInfos
+  putMVar mvarInfos varInfos
+  let  line = infosLine varInfos
+  case search of
+    "" -> return ()
+    a  -> do
+      found <- searchOnList h mvarInfos a line True
+      if found then showInCmdLine "Found!"
+               else showInCmdLine $ "\"" ++ a ++ "\" not found"
+
+searchOnList h mvarInfos s line first = do
+  varInfos <- takeMVar mvarInfos
+  putMVar mvarInfos varInfos
+  if not first && (infosLine varInfos == line)
+    then return False -- one loop
+    else if infosSearch varInfos s
+           then return True
+           else sendCodeToOnkyo h "NTCRIGHT"
+             >> threadDelay 1000000
+             >> searchOnList h mvarInfos s line False

@@ -1,2 +1,5 @@
 - streaming
 - recherche dans une playlist
+- correction des bugs : 
+  - refresh passe en dispaly
+  - help fait planter

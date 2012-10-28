@@ -1,6 +1,7 @@
 module UI ( goLineAndClear, lastLine, termWidth, putLine, putLines, initScreen
-          , clearFromCursor, initCmdLine, showInCmdLine, exeFromCommandLine
-          , showInfos, showHelp, getInput,wipeScreen) where
+          , clearFromCursor, initCmdLine, showInCmdLine
+          , exeFromCommandLine, getFromCommandLine 
+          , showInfos, showHelp, wipeScreen) where
 
 import System.Console.ANSI
 import Data.List
@@ -14,29 +15,6 @@ import TermSize
 import Infos
 import Config
 import Types
-
-allInfos :: [Int]
-allInfos = [1..5]
-
--- Haskeline
-searchCommand l str =
-  map simpleCompletion $ filter (str `isPrefixOf`) $ map commandToName l
-    where commandToName (BasicCommand a c) = a
-          commandToName (AdvancedCommand a f) = a
-          commandToName (ComponedCommand a l) = a
-commandSettings l = Settings
-  { historyFile = Just ".cmdhist"
-  , complete = completeWord Nothing " \t" $ return . searchCommand l
-  , autoAddHistory = True
-  }
-
-searchInput str = []
-inputSettings = Settings
-  { historyFile = Just ".inputhist"
-  , complete = completeWord Nothing " \t" $ return . searchInput
-  , autoAddHistory = True
-  }
---------------------------------
 
 goLine n = do
   setCursorPosition n 0
@@ -108,6 +86,7 @@ initCmdLine = do
   l <- lastLine
   goLineAndClear $ l-1
   drawLine
+  clearLine
 
 wipeScreen l = do
   goLineAndClear l
@@ -118,8 +97,8 @@ trim s =
   Text.unpack $ Text.strip $ Text.pack s
 
 
-inputInCommandLine s settings display = do
-  takeMVar display -- blocage de l'affichage
+inputInCommandLine s settings mvarInfos = do
+  varInfos <- takeMVar mvarInfos -- blocage de l'affichage
   initCmdLine 
   showCursor
   hSetEcho stdin True
@@ -128,20 +107,15 @@ inputInCommandLine s settings display = do
   hSetEcho stdin False
   hideCursor
   wipeScreen bottom
-  putMVar display allInfos -- reprise de l'affichage et raffichage
+  putMVar mvarInfos (varInfos {infosMod = allInfos})
+    -- reprise de l'affichage et raffichage
   return line
 
-getFromCommandLine l display = do
-  line <- inputInCommandLine ":" (commandSettings l) display
+getFromCommandLine mvarInfos s l = do
+  line <- inputInCommandLine s l mvarInfos
   case line of
     Nothing -> return ""
     Just a -> return $ trim a 
-  
-getInput display = do
-  line <- inputInCommandLine " -- INSERT -- " inputSettings display
-  case line of
-    Just a -> return a
-    Nothing -> return ""
   
 showInCmdLine s = do 
   l <- lastLine
@@ -158,7 +132,8 @@ showInfos i = do
       | l == 1 -> putLineAt l (infosTime i ++ "  " ++ (infosTitle i))
       | l == 2 -> putLineAt l (infosTrack i ++ "  " ++ (infosAlbum i)
                                ++ " - " ++ (infosArtist i))
-      | l == 3 -> putLineAt l ""
+      | l == 3 -> putLineAt l (infosPage i ++ "  " ++ (show $ infosLine i)
+                               ++ "/" ++ (show $ infosSize i))
       | l == 4 -> drawLineAt l
       | l == 5 -> UI.showList i l
   if infosMod i == []
@@ -167,28 +142,28 @@ showInfos i = do
 
 showList i l = do
   putColorLinesAt l (zipWith (++)
-                        -- ajoute le numero de l'entree dans la liste
+                        -- add the number of the line
                        (map (\ x -> x ++ " - ")
                        (map show [0..9])) (infosList i))
                     (zipWith (++)
-                      -- surligne la ligne courante
+                      -- underline the current line
                       (map (\ x -> [SetSwapForegroundBackground x]) (infosCursor i))
-                      -- colorie la ligne en cours de lecture
+                      -- colorize the playing song
                       (map (\ x -> if x then [SetColor Foreground Dull Red] else [])
                            (infosPlay i)))
   drawLine
 
 
-exeFromCommandLine h map l display = do
-  line <- getFromCommandLine l display
+exeFromCommandLine h map l mvarInfos = do
+  line <- getFromCommandLine mvarInfos ":" l 
   case line of
     "" -> return ()
     a ->
       case Map.lookup a map of
-        Just f -> f h display
+        Just f -> f h mvarInfos
         Nothing -> showInCmdLine "Command not found"
 
-showHelp h k display = do
+showHelp h k mvarInfos = do
   let l = 20
   last <- lastLine
   goLineAndClear l
@@ -197,9 +172,9 @@ showHelp h k display = do
   goLineAndClear last
   putStr " -- Press a key to continue -- "
   c <- getChar
-  redrawInfos h display
+  redrawInfos h mvarInfos
 
-redrawInfos h display = do
-  takeMVar display
+redrawInfos h mvarInfos = do
+  varInfos <- takeMVar mvarInfos
   wipeScreen 1
-  putMVar display [1..5]
+  putMVar mvarInfos (varInfos {infosMod = allInfos})

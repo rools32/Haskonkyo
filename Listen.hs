@@ -2,18 +2,33 @@ module Listen (listen) where
 
 import Data.Char (digitToInt)
 import Control.Concurrent (putMVar, takeMVar)
+import Numeric(readHex)
+
 import UI
 import Infos
 import OnkyoIO (getCodeFromOnkyo)
 
+subStrings [] s = [s]
+subStrings (i:idx) s =
+  [take i s] ++ (subStrings idx $ drop i s)
+
+hexToInt = fst . head . readHex 
+
 updateInfos infos code =
   case cmdType of
     "NLT" -> 
-      case cmdParam of
+      case source of
         "00" -> infos {infosSource = "dlna"}
+        "0A" -> infos {infosSource = "spotify"}
+                      {infosLine = hexToInt globalLine}
+                      {infosSize = hexToInt totalLine}
+                      {infosPage = title}
+                      {infosMod = [3]}
         "02" -> infos {infosSource = "vtuner"}
         "F3" -> infos {infosSource = "net"}
         _    -> infos {infosSource = "oups"}
+      where [source, tmp1, globalLine, totalLine, tmp2, title] =
+              subStrings [2, 2, 4, 4, 10] cmdParam
     "NTM" -> infos {infosTime = cmdParam} {infosMod = [1]}
     "SPL" -> infos {infosTime = cmdParam} {infosMod = [1]}
     "NTI" -> infos {infosTitle = cmdParam} {infosMod = [1]}
@@ -22,7 +37,7 @@ updateInfos infos code =
     "NTR" -> infos {infosTrack = cmdParam} {infosMod = [2]}
     "MVL" -> infos {infosVolume = cmdParam} {infosMod = [1]}
     "AMT" -> infos {infosMute = cmdParam} {infosMod = [1]}
-    -- state
+    -- state TODO correct
     "NST" ->
       (\ (cmdParam, infos) -> 
         case head cmdParam of
@@ -45,7 +60,7 @@ updateInfos infos code =
                    'p' -> infos {infosState = "pause"}
                    'F' -> infos {infosState = "FF"}
                    'R' -> infos {infosState = "FR"})) (cmdParam, infos)
-    -- List info
+    -- List info TODO use subStrings
     "NLS" ->
       case cmdParam of
         ('C':xs) -> -- cursor info
@@ -69,28 +84,10 @@ updateInfos infos code =
           where  idx = digitToInt l
         _ -> infos {infosMod = []}
     _ -> infos {infosMod = []}
-    where (cmdType, cmdParam) = splitAt 3 code
+    where [cmdType, cmdParam] = subStrings [3] code
   
 notIdxToBool idx list =
   take idx list ++ [False] ++ (drop (idx+1) list)
-
-infosEmpty = Infos
-  { infosSource = ""
-  , infosTime = "00:00/00:00"
-  , infosAlbum = "Album"
-  , infosArtist = "Artist"
-  , infosTitle  = "Title"
-  , infosTrack = "00/00"
-  , infosVolume = "00"
-  , infosMute = "-"
-  , infosState = "-"
-  , infosRepeat = "-"
-  , infosShuffle = "-"
-  , infosList = replicate 10 ""
-  , infosCursor = idxToBool 0
-  , infosPlay = idxToBool (-1)
-  , infosMod = [1..5]
-}
 
 idxToBool i =
   idxToBool_ i []
@@ -102,12 +99,18 @@ idxToBool_ i l =
       idxToBool_ (i+1)
                   (if (i == 9) then (True:l) else (False:l))
 
-loop h infos display = do
-  mod <- takeMVar display
+loop h infos mvarInfos = do
+  -- Showing infos
+  varInfos <- takeMVar mvarInfos
+  let mod = infosMod varInfos -- lines to be refreshed
   showInfos $ infos {infosMod = infosMod infos ++ mod}
-  code <- getCodeFromOnkyo h
-  putMVar display []
-  loop h (updateInfos infos code) display
+  putMVar mvarInfos infos
 
-listen h display = do
-  loop h infosEmpty display
+  -- Listen from Onkyo
+  code <- getCodeFromOnkyo h
+
+  loop h (updateInfos infos code) mvarInfos
+
+
+listen h mvarInfos = do
+  loop h infosEmpty mvarInfos

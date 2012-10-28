@@ -3,6 +3,7 @@ import OnkyoIO (connectToOnkyo)
 import Speak
 import Listen
 import UI
+import Infos(infosEmpty)
 import Config(keyList)
 import Commands(commandList)
 
@@ -13,9 +14,9 @@ ip = "192.168.1.3"
 
 main :: IO ()
 main = do
-  display <- newEmptyMVar
-  putMVar display []
+  mvarInfos <- newEmptyMVar
+  putMVar mvarInfos infosEmpty
   h <- connectToOnkyo ip port
   initScreen
-  forkIO $listen h display
-  speak h display
+  forkIO $listen h mvarInfos
+  speak h mvarInfos
