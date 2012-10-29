@@ -60,8 +60,12 @@ findOnString pattern s =
     Just [] -> True
     Nothing -> False
 
+
+findPos elt list =
+  map fst $ filter ((elt==).snd) $ zip [0..] list
+
 infosSearch infos pattern =
-  or $ map ( \ x -> findOnString pattern x) (infosList infos)
+  findPos True $ map ( \ x -> findOnString pattern x) (infosList infos)
 
 --      reduce op (x:xs) =
 --        if xs == [] then x

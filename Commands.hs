@@ -159,8 +159,22 @@ searchOnList h mvarInfos s line first = do
   putMVar mvarInfos varInfos
   if not first && (infosLine varInfos == line)
     then return False -- one loop
-    else if infosSearch varInfos s
-           then return True
-           else sendCodeToOnkyo h "NTCRIGHT"
-             >> threadDelay 1000000
-             >> searchOnList h mvarInfos s line False
+    else
+      case infosSearch varInfos s of
+        [] -> sendCodeToOnkyo h "NTCRIGHT"
+           >> threadDelay 1000000
+           >> searchOnList h mvarInfos s line False
+        (l:ls) -> goLine h mvarInfos l
+               >> return True
+
+findPos elt list =
+  map fst $ filter ((elt==).snd) $ zip [0..] list
+
+  
+goLine h mvarInfos line = do
+  infos <- takeMVar mvarInfos
+  putMVar mvarInfos infos
+  let cur = head $ findPos True $ infosCursor infos
+  let shift = line-cur
+  let codeList = replicate (abs shift) (if shift < 0 then "up" else "down")
+  sendActions h mvarInfos codeList
