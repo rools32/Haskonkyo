@@ -2,7 +2,7 @@ module OnkyoIO (connectToOnkyo,sendCodeToOnkyo,getCodeFromOnkyo) where
 
 import Network
 import System.IO (hSetBuffering,BufferMode(LineBuffering),Handle)
-import System.IO.UTF8 (hPutStrLn,hGetLine)
+import System.IO (hPutStrLn,hGetLine)
 import Text.Printf
 
 connectToOnkyo ip port = do
